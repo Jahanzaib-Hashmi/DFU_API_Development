@@ -1,49 +1,80 @@
-from fastapi import FastAPI, File, UploadFile
-import tensorflow as tf
-import numpy as np
+import os
+from flask import Flask, request, jsonify, redirect
+import torch
+from torchvision import transforms
+from PIL import Image
+import torch.nn as nn
+import torchvision.models as models
 
-# Define constants for image processing
-IMAGE_HEIGHT = 240
-IMAGE_WIDTH = 240
+# Initialize the Flask application
+app = Flask(__name__)
 
-# Load your pre-trained model
-model = tf.keras.models.load_model('DFU_v1_sgd_BCE_100.keras')
+# Model setup function
+def build_model(pretrained=True, fine_tune=True, num_classes=4):
+    if pretrained:
+        print('[INFO]: Loading pre-trained weights')
+    else:
+        print('[INFO]: Not loading pre-trained weights')
+    model = models.efficientnet_b1(weights='DEFAULT')  # Load the base model
+    if fine_tune:
+        print('[INFO]: Fine-tuning all layers...')
+        for params in model.parameters():
+            params.requires_grad = True
+    else:
+        print('[INFO]: Freezing hidden layers...')
+        for params in model.parameters():
+            params.requires_grad = False
+    # Update the final classifier head
+    model.classifier[1] = nn.Linear(in_features=model.classifier[1].in_features, out_features=num_classes)
+    return model
 
-# Define class names
-class_names = ['Abnormal(Ulcer)', 'Normal(Healthy skin)']
+# Initialize and load the model
+model_path = 'effnetb1_best_model.pth'  # Path to your trained model weights
+model = build_model()
+try:
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')), strict=True)
+    print("[INFO]: Model weights loaded successfully.")
+except Exception as e:
+    print(f"[ERROR]: Failed to load model weights.")
 
-# Initialize FastAPI app
-app = FastAPI()
+model.eval()  # Set the model to evaluation mode
 
-def decode_img(img_data):
-    # Convert the compressed string to a 3D uint8 tensor
-    img = tf.io.decode_jpeg(img_data, channels=3)
-    # Resize the image to the desired size
-    img = tf.image.resize(img, [IMAGE_HEIGHT, IMAGE_WIDTH])
-    # Normalize the image to [0, 1]
-    img = img / 255.0
-    return img
+# Define image transformations
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize to match model input
+    transforms.ToTensor(),          # Convert image to tensor
+])
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    # Read the uploaded image file
-    contents = await file.read()
+@app.route('/')
+def home():
+    return redirect('/predict')  # Redirect to the /predict endpoint
 
-    # Process the image
+@app.route('/predict', methods=['GET', 'POST'])
+def predict():
+    if request.method == 'GET':
+        return "Use a POST request to this endpoint to upload an image for prediction."
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
     try:
-        image = decode_img(contents)  # Decode and preprocess the image
-        # Add batch dimension
-        image = tf.expand_dims(image, axis=0)
+        # Process the uploaded image
+        img = Image.open(file.stream).convert('RGB')
+        img = transform(img).unsqueeze(0)  # Add batch dimension
         
-        # Make prediction
-        prediction = model.predict(image)
-        predicted_class_index = np.argmax(prediction[0])
-        predicted_class = class_names[predicted_class_index]
-        
-        return {"prediction": predicted_class}
+        # Perform the prediction
+        with torch.no_grad():
+            output = model(img)
+        _, predicted = torch.max(output, 1)  # Get the predicted class index
+        return jsonify({'prediction': int(predicted.item())})
+    
     except Exception as e:
-        return {"error": str(e)}
+        return jsonify({'error': str(e)}), 500
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == '__main__':
+    app.run(debug=True)

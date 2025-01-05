@@ -9,6 +9,9 @@ import torchvision.models as models
 # Initialize the Flask application
 app = Flask(__name__)
 
+# Configure maximum file upload size (16 MB in this case)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
+
 # Model setup function
 def build_model(pretrained=True, fine_tune=True, num_classes=4):
     if pretrained:
@@ -59,29 +62,48 @@ def home():
 def predict():
     if request.method == 'GET':
         return "Use a POST request to this endpoint to upload an image for prediction."
-    
+
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
-    
+
     file = request.files['file']
-    
+
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
-    
+
     try:
         # Process the uploaded image
         img = Image.open(file.stream).convert('RGB')
         img = transform(img).unsqueeze(0)  # Add batch dimension
         
+        print("[INFO]: Image successfully processed")
+
         # Perform the prediction
         with torch.no_grad():
             output = model(img)
         _, predicted = torch.max(output, 1)  # Get the predicted class index
+
+        print("[INFO]: Prediction successful")
         return jsonify({'prediction': int(predicted.item())})
-    
+
     except Exception as e:
         print(f"[ERROR]: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+# Debugging endpoint to log incoming POST data
+@app.before_request
+def log_request():
+    print(f"[INFO]: Method: {request.method}, Endpoint: {request.path}")
+    if request.method == 'POST':
+        print(f"[INFO]: POST Data: {request.form}, Files: {list(request.files.keys())}")
+
+# Temporary debugging endpoint to inspect POST requests
+@app.route('/debug', methods=['POST'])
+def debug():
+    return jsonify({
+        'form': request.form,
+        'files': list(request.files.keys())
+    })
 
 if __name__ == '__main__':
     # Use the $PORT environment variable for deployment (default to 5000 for local testing)

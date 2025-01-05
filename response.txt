@@ -1,0 +1,69 @@
+To create a FastAPI application that allows users to upload an image and get a prediction from your trained model, you can modify your existing code. Here's an example of how you can achieve this:
+
+```python
+from fastapi import FastAPI, File, UploadFile
+from pydantic import BaseModel
+import numpy as np
+import tensorflow as tf
+from PIL import Image
+import io
+
+# Load your trained model
+model = tf.keras.models.load_model('DFU_v1_sgd_BCE_100.keras')
+
+app = FastAPI()
+
+# Define the input data model
+class PredictionRequest(BaseModel):
+    image: bytes
+
+@app.post("/predict")
+async def predict(request: PredictionRequest):
+    # Convert the uploaded image to a numpy array
+    image = Image.open(io.BytesIO(request.image))
+    image = image.resize((224, 224))  # Adjust the size according to your model
+    input_data = np.array(image) / 255.0  # Normalize the pixel values
+    input_data = np.expand_dims(input_data, axis=0)
+
+    # Make a prediction using the loaded model
+    prediction = model.predict(input_data)
+
+    # Process the prediction result as needed
+    # For example, return the predicted class index
+    predicted_class = np.argmax(prediction, axis=1)[0]
+
+    return {"prediction": predicted_class}
+```
+
+Here's how you can use this API:
+
+1. **Run the FastAPI application** using Uvicorn:
+
+```bash
+uvicorn app:app --reload
+```
+
+2. **Open your web browser** and go to `http://127.0.0.1:8000/docs`. This will open the Swagger UI for your FastAPI application.
+
+3. **Click on the `/predict` endpoint** and then on the "Try it out" button.
+
+4. **Click on the "Choose File" button** and select an image file to upload.
+
+5. **Click on the "Execute" button** to send the request to the API.
+
+6. **The API will return a JSON response** with the predicted class index for the uploaded image.
+
+In this modified code:
+
+- We import `File` and `UploadFile` from `fastapi` to handle file uploads.
+- We define a new `PredictionRequest` model that includes the `image` field of type `bytes` to receive the uploaded image data.
+- The `/predict` endpoint now uses `async def` to handle asynchronous file uploads.
+- Inside the `predict` function, we convert the uploaded image data to a numpy array, preprocess it (e.g., resize and normalize), and pass it to the loaded model for prediction.
+- The predicted class index is returned in the JSON response.
+
+Make sure to adjust the image preprocessing steps (e.g., size, normalization) according to your specific model requirements.
+
+This setup will allow users to upload an image and receive a prediction from your trained model using the FastAPI application.
+
+Citations:
+[1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/28746142/d34f528a-6d69-44c2-99f2-d7c05708fd64/dfu-efficientnetb1.ipynb

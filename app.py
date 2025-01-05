@@ -63,32 +63,30 @@ def predict():
     if request.method == 'GET':
         return "Use a POST request to this endpoint to upload an image for prediction."
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
 
-    file = request.files['file']
+        file = request.files['file']
 
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
 
-    try:
-        # Process the uploaded image
-        img = Image.open(file.stream).convert('RGB')
-        img = transform(img).unsqueeze(0)  # Add batch dimension
-        
-        print("[INFO]: Image successfully processed")
+        try:
+            # Process the uploaded image
+            img = Image.open(file.stream).convert('RGB')
+            img = transform(img).unsqueeze(0)
 
-        # Perform the prediction
-        with torch.no_grad():
-            output = model(img)
-        _, predicted = torch.max(output, 1)  # Get the predicted class index
+            # Perform the prediction
+            with torch.no_grad():
+                output = model(img)
+            _, predicted = torch.max(output, 1)
+            return jsonify({'prediction': int(predicted.item())})
 
-        print("[INFO]: Prediction successful")
-        return jsonify({'prediction': int(predicted.item())})
+        except Exception as e:
+            print(f"[ERROR]: {str(e)}")
+            return jsonify({'error': str(e)}), 500
 
-    except Exception as e:
-        print(f"[ERROR]: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 # Debugging endpoint to log incoming POST data
 @app.before_request

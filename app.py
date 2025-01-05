@@ -32,10 +32,11 @@ def build_model(pretrained=True, fine_tune=True, num_classes=4):
 model_path = 'effnetb1_best_model.pth'  # Path to your trained model weights
 model = build_model()
 try:
+    print("[INFO]: Loading model weights...")
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')), strict=True)
     print("[INFO]: Model weights loaded successfully.")
 except Exception as e:
-    print(f"[ERROR]: Failed to load model weights.")
+    print(f"[ERROR]: Failed to load model weights. {str(e)}")
 
 model.eval()  # Set the model to evaluation mode
 
@@ -44,6 +45,11 @@ transform = transforms.Compose([
     transforms.Resize((224, 224)),  # Resize to match model input
     transforms.ToTensor(),          # Convert image to tensor
 ])
+
+# Health check endpoint
+@app.route('/health', methods=['GET'])
+def health():
+    return "Service is running!", 200
 
 @app.route('/')
 def home():
@@ -74,7 +80,11 @@ def predict():
         return jsonify({'prediction': int(predicted.item())})
     
     except Exception as e:
+        print(f"[ERROR]: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Use the $PORT environment variable for deployment (default to 5000 for local testing)
+    port = int(os.environ.get('PORT', 5000))
+    print(f"[INFO]: Starting app on port {port}...")
+    app.run(host='0.0.0.0', port=port)
